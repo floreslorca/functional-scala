@@ -12,9 +12,14 @@ object algebra {
   // Define a semigroup for `NotEmpty` below.
   //
   case class NotEmpty[+A](head: A, tail: Option[NotEmpty[A]])
-  implicit def NotEmptySemigroup[A]: Semigroup[NotEmpty[A]] =
-    ???
-  val example1 = NotEmpty(1, None) |+| NotEmpty(2, None)
+  implicit def NotEmptySemigroup[A]: Semigroup[NotEmpty[A]] = new Semigroup[NotEmpty[A]] {
+    override def append(f1: NotEmpty[A], f2: => NotEmpty[A]): NotEmpty[A] = f1 match {
+      case NotEmpty(h1, None) => NotEmpty(h1, Some(f2))
+      case NotEmpty(h1, Some(h2)) => NotEmpty(h1, Some(append(h2, f2)))
+    }
+  }
+
+  val example1 = NotEmpty(1, Some(NotEmpty(3, None))) |+| NotEmpty(2, None)
 
   //
   // EXERCISE 2

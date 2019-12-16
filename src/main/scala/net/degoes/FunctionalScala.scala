@@ -8,4 +8,5 @@ object FunctionalScala extends App {
     (for {
       _ <- putStrLn("Hello World!")
     } yield ()).redeemPure(_ => ExitStatus.ExitNow(1), _ => ExitStatus.ExitNow(0))
+
 }

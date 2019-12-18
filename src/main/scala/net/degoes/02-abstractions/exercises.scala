@@ -27,9 +27,23 @@ object algebra {
   // Design a permission system for securing some resource, together with a
   // monoid for the permission data structure.
   //
-  case class Permission(/* */)
-  implicit val MonoidPermission: Monoid[Permission] = ???
-  val example2 = mzero[Permission] |+| Permission()
+  sealed trait Permit
+  case object Read extends Permit
+  case object Write extends Permit
+  case object Execute extends Permit
+
+  case class Resource(id: String)
+  case class User(name: String)
+
+
+  case class Permission(permits: Map[User, Map[Resource, Set[Permit]]])
+
+  implicit val MonoidPermission: Monoid[Permission] = new Monoid[Permission] {
+    def zero: Permission = Permission(Map.empty)
+    def append(f1: Permission, f2: => Permission): Permission = Permission(f1.permits |+| f2.permits)
+  }
+
+  val example2 = mzero[Permission] |+| Permission(Map.empty)
 
   //
   // EXERCISE 3
@@ -39,8 +53,7 @@ object algebra {
   //
   implicit def SemigroupTuple2[A: Semigroup, B: Semigroup]:
     Semigroup[(A, B)] = new Semigroup[(A, B)] {
-      def append(l: (A, B), r: => (A, B)): (A, B) =
-        (l._1 |+| r._1, l._2 |+| r._2)
+      def append(l: (A, B), r: => (A, B)): (A, B) = (l._1 |+| r._1, l._2 |+| r._2)
     }
 
   //
@@ -71,7 +84,9 @@ object functor {
   //
   // Define an instance of `Functor` for `Nothing`.
   //
-  implicit val NothingFunctor: Functor[Nothing] = ???
+  implicit val NothingFunctor: Functor[Nothing] = new Functor[Nothing] {
+    override def map[A, B](fa: Nothing)(f: A => B): Nothing = fa
+  }
 
   //
   // EXERCISE 3
@@ -82,22 +97,16 @@ object functor {
 
   implicit def ParserFunctor[E]: Functor[Parser[E, ?]] =
     new Functor[Parser[E, ?]] {
-      // need a Parser[E, B] which represents String => Either[E, (String, B)]
-      def map[A, B](fa: Parser[E, A])(f: A => B): Parser[E, B] = Parser(str => {
-        val res: Either[E, (String, A)] = fa.run(str)
-        res match {
-          case Left(e) => Left(e)
-          case Right((resString, a)) => Right((resString, f(a)))
-        }
-      })
+      def map[A, B](fa: Parser[E, A])(f:  A => B): Parser[E, B] = Parser[E, B](s => fa.run(s).map(e => (e._1, f(e._2))))
     }
 
-  def zip[E, A, B](l: Parser[E, A], r: Parser[E, B]): Parser[E, (A, B)] = new Parser[E, B](input =>
-    l.run(input) match {
-      case Left(e) => Left(e)
-      case Right(n) => r.run(n._1)
+  def zip[E, A, B](l: Parser[E, A], r: Parser[E, B]): Parser[E, (A, B)] = Parser[E, (A, B)] { s =>
+    (l.run(s), r.run(s)) match {
+      case (Right(ll), Right(rr)) => Right(ll._1, (ll._2, rr._2))
+      case (Left(e), _) => Left(e)
+      case (_, Left(e)) => Left(e)
     }
-  )
+  }
 
 
   //
@@ -108,8 +117,7 @@ object functor {
   case class DataType[A](f: A => A)
   implicit val DataTypeFunctor: Functor[DataType] =
     new Functor[DataType] {
-      def map[A, B](fa: DataType[A])(f: A => B): DataType[B] =
-        ???
+      def map[A, B](fa: DataType[A])(f: A => B): DataType[B] = DataType(b => f(fa.f))
     }
 
   //
@@ -132,31 +140,27 @@ object functor {
   implicit def FunctorSumFunctor[F[_]: Functor, G[_]: Functor]:
   Functor[FunctorSum[F, G, ?]] = new Functor[FunctorSum[F, G, ?]] {
     override def map[A, B](fa: FunctorSum[F, G, A])(f: A => B): FunctorSum[F, G, B] =
-      FunctorSum[F, G, B](fa.run match {
+      FunctorSum(fa.run match {
         case Left(ffa) => Left(ffa.map(f))
-        case Right(ga) => Right(ga.map(f))
+        case Right(gga) => Right(gga.map(f))
       })
   }
+
   //
   // EXERCISE 7
   //
   // Define an instance of `Functor` for `FunctorNest`.
   //
   case class FunctorNest[F[_], G[_], A](run: F[G[A]])
+
   implicit def FunctorNestFunctor[F[_]: Functor, G[_]: Functor]:
   Functor[FunctorNest[F, G, ?]] = new Functor[FunctorNest[F, G, ?]] {
-    override def map[A, B](fa: FunctorNest[F, G, A])(f: A => B): FunctorNest[F, G, B] =
-      FunctorNest(fa.run.map(_.map(f)): F[G[B]])
+    override def map[A, B](fa: FunctorNest[F, G, A])(f: A => B): FunctorNest[F, G, B] = FunctorNest(fa.run.map(_.map(f)))
   }
 
-  def zipOption[A, B](l: Option[A], r: Option[B]): Option[(A, B)] =
-    (l, r) match {
-      case (Some(a), Some(b)) => Some((a, b))
-      case _ => None
-    }
+  def zipOption[A, B](l: Option[A], r: Option[B]): Option[(A, B)] = l.flatMap(ll => r.map(rr => (ll, rr)))
 
-  def zipWith[A, B, C](l: Option[A], r: Option[B])(f: ((A, B)) => C): Option[C] =
-    zipOption(l, r).map(f)
+  def zipWith[A, B, C](l: Option[A], r: Option[B])(f: ((A, B)) => C): Option[C] = zipOption(l, r).map(f)
 
   def zipList1[A, B](l: List[A], r: List[B]): List[(A, B)] =
     (l, r) match {
@@ -179,7 +183,7 @@ object functor {
     new Applicative[Option] {
       def point[A](a: => A): Option[A] = Some(a)
 
-      def ap[A, B](fa: => Option[A])(f: => Option[A => B]): Option[B] = ???
+      def ap[A, B](fa: => Option[A])(f: => Option[A => B]): Option[B] = fa.flatMap(a => f.map(ff => ff(a)))
     }
 
   //
@@ -191,9 +195,9 @@ object functor {
   //
   val example1 = (Option(3) |@| Option(5))((_, _))
   val example2 = zip(Option(3), Option("foo")) : Option[(Int, String)]
-  def zip[F[_]: Applicative, A, B](l: F[A], r: F[B]): F[(A, B)] = (l |@| r)((_,_))
-  def ap2[F[_]: Applicative, A, B](fa: F[A], fab: F[A => B]): F[B] =
-    ???
+
+  def zip[F[_]: Applicative, A, B](l: F[A], r: F[B]): F[(A, B)] = (l |@| r)((_, _))
+  def ap2[F[_]: Applicative, A, B](fa: F[A], fab: F[A => B]): F[B] = zip(fa, fab).map(s => s._2(s._1))
 
   //
   // EXERCISE 10
@@ -202,21 +206,17 @@ object functor {
   //
   implicit def ApplicativeParser[E]: Applicative[Parser[E, ?]] =
     new Applicative[Parser[E, ?]] {
-      def point[A](a: => A): Parser[E,A] = new Parser[E,A](s => Right((s, a)))
+      def point[A](a: => A): Parser[E,A] = Parser(s => Right((s, a)))
 
-      def ap[A, B](fa: => Parser[E,A])(f: => Parser[E, A => B]): Parser[E,B] = fa.run
+      def ap[A, B](fa: => Parser[E,A])(f: => Parser[E, A => B]): Parser[E,B] = Parser { s =>
+        (fa.run(s), f.run(s)) match {
+          case (Right(faa), Right(ff)) => Right(ff._1, ff._2(faa._1))
+          case (Left(e), _) => Left(e)
+          case (_, Left(e)) => Left(e)
+        }
+      }
     }
   implicit def ApplicativeList: Applicative[List] =
-    new Applicative[List] {
-      def point[A](a: => A): List[A] = List(a)
-
-      def ap[A, B](fa: => List[A])(f: => List[A => B]): List[B] =
-        for {
-          l <- fa
-          ff <- f
-        } yield ff(l)
-    }
-
 
   //
   // EXERCISE 11
@@ -224,49 +224,17 @@ object functor {
   // Define an instance of `Monad` for `BTree`.
   //
   implicit val MonadBTree: Monad[BTree] =
-    new Monad[BTree] {
-      def point[A](a: => A): BTree[A] = new Leaf(a)
-
-
-      def bind[A, B](fa: BTree[A])(f: A => BTree[B]): BTree[B] = fa match {
-        case Leaf(a) => f(a)
-        case Fork(a, b) =>  Fork[B](bind(a)(f), bind(b)(f))
-      }
-    }
 
   implicit val MonadList: Monad[List] =
-    new Monad[List] {
-      def point[A](a: => A): List[A] = List(a) {
-        case h :: l => f(h) ::: bind(l)(f)
-        case Nil => Nil
-      }
-    }
 
   implicit val MonadList: Monad[Option] =
-    new Monad[Option] {
-      def point[A](a: => A): Option[A] = Some(a)
 
-      def bind[A, B](fa: Option[A])(f: A => Option[B]): Option[B] = fa match {
-        case None => None
-        case Some(e) => f(e)
-      }
-    }
   //
   // EXERCISE 12
   //
   // Define an instance of `Monad` for `Parser[E, ?]`.
   //
   implicit def MonadParser[E]: Monad[Parser[E, ?]] =
-    new Monad[Parser[E, ?]] {
-      def point[A](a: => A): Parser[E,A] = new Parser(run = s => Right((s,a)))
-
-      def bind[A, B](fa: Parser[E,A])(f: A => Parser[E,B]): Parser[E,B] = new Parser[E, B](input =>
-        fa.run(input) match {
-          case Right((s, a)) => f(a).run(s)
-          case Left(e) => Left(e)
-        }
-      )
-    }
 }
 
 object parser {
@@ -296,12 +264,12 @@ object parser {
 
   sealed trait Error
   case object ExpectedLit extends Error
-
+/*
   val parser: Parser[Error, List[Int]] = for {
     c <- char(ExpectedLit)
     _ <- if (c == '[') Parser.point(()) else Parser.fail(ExpectedLit)
   }
-
+*/
   object Parser {
     def fail[E, A](e: E): Parser[E, A] =
       Parser(input => Left(e))
@@ -334,6 +302,7 @@ object parser {
       )
     }
 }
+
 object foldable {
   //
   // EXERCISE 1
@@ -347,14 +316,15 @@ object foldable {
     new Foldable[BTree] {
       def foldMap[A, B](fa: BTree[A])(f: A => B)(implicit F: Monoid[B]): B = fa match {
         case Leaf(a) => f(a)
-        case Fork(a, b) => foldMap(a)(f) |+| foldMap(b)(f)
+        case Fork(l, r) => foldMap(l)(f) |+| foldMap(r)(f)
       }
 
       def foldRight[A, B](fa: BTree[A], z: => B)(f: (A, => B) => B): B = fa match {
         case Leaf(a) => f(a, z)
-        case Fork(a, b) =>
-          val l = foldRight(a, z)(f)
-          foldRight(b, l)(f)
+        case Fork(l, r) => {
+          val left = foldRight(l, z)(f)
+          foldRight(r, left)(f)
+        }
       }
     }
 
@@ -362,13 +332,13 @@ object foldable {
   implicit val FoldableList: Foldable[List] =
     new Foldable[List] {
       def foldMap[A, B](fa: List[A])(f: A => B)(implicit F: Monoid[B]): B = fa match {
-        case Nil => F.zero
-        case h :: l => f(h) |+| foldMap(l)(f)
+        case Nil => mzero[B]
+        case h :: t => f(h) |+| foldMap(t)(f)
       }
 
       def foldRight[A, B](fa: List[A], z: => B)(f: (A, => B) => B): B = fa match {
         case Nil => z
-        case h :: l => foldRight(l, f(h, z))(f)
+        case h :: t => foldRight(t, f(h, z))(f)
       }
     }
 
@@ -377,8 +347,7 @@ object foldable {
   //
   // Try to define an instance of `Foldable` for `A => ?`.
   //
-  implicit def FunctionFoldable[A]: Foldable[A => ?] =
-    ???
+  implicit def FunctionFoldable[A]: Foldable[A => ?] = ???
 
   //
   // EXERCISE 3
@@ -388,8 +357,8 @@ object foldable {
   implicit val TraverseBTree: Traverse[BTree] =
     new Traverse[BTree] {
       def traverseImpl[G[_]: Applicative, A, B](fa: BTree[A])(f: A => G[B]): G[BTree[B]] = fa match {
-        case Leaf(a) => f(a).map(Leaf(_))
-        case Fork(a, b) => (traverseImpl(a)(f) |@| traverseImpl(b)(f))(Fork(_, _))
+        case Leaf(a) => f(a).map(s => Leaf(s))
+        case Fork(left, right) => (traverseImpl(left)(f) |@| traverseImpl(right)(f))(Fork(_, _))
       }
     }
 
@@ -405,7 +374,13 @@ object foldable {
 object optics {
   sealed trait Country
   object Country {
-    val usa: Prism[Country, Unit] = ???
+    val usa: Prism[Country, Unit] = Prism (
+      c => c match {
+        case USA => Some(())
+        case _ => None
+      },
+      a => USA
+    )
   }
   case object USA extends Country
   case object UK extends Country
@@ -457,7 +432,7 @@ object optics {
     get: S => A,
     set: A => (S => S)
   ) { self =>
-    def ¤[B](that: Lens[A, B]): Lens[S, B] = Lens[S, B](s => that.get(self.get(s)), b => self.set(self.get(b)))
+    def xx[B](that: Lens[A, B]): Lens[S, B] = Lens[S, B](s => that.get(self.get(s)), b => self.set(self.get(b)))
 
     final def update(f: A => A): S => S =
       (s: S) => self.set(f(self.get(s)))(s)
@@ -469,7 +444,6 @@ object optics {
   // Create a version of `org2` that uses lenses to update the salaries.
   //
   val org2_lens: Org =
-    (Org.site ¤ Site.manager ¤ Employee.salary).update(_ * 0.95)(org)
 
   //
   // EXERCISE 3
@@ -479,11 +453,7 @@ object optics {
   final case class Prism[S, A](
     get: S => Option[A],
     set: A => S) { self =>
-    def >>> [B](that: Prism[A, B]): Prism[S, B] = Prism[S, B](
-      get = s => self.get(s).flatMap(that.get),
-      set = that.set.andThen(self.set)
-    )
-
+    def >>> [B](that: Prism[A, B]): Prism[S, B] =
 
     final def select(implicit ev: Unit =:= A): S =
       set(ev(()))
@@ -494,7 +464,7 @@ object optics {
   //
   // Implement `_Left` and `_Right`.
   //
-  def _Left[A, B]: Prism[Either[A, B], A] = Prism[Either[A, B], A](s => s.left.toOption, q => Left(q))
+  def _Left[A, B]: Prism[Either[A, B], A] =
   def _Right[A, B]: Prism[Either[A, B], B] =
     ???
 }

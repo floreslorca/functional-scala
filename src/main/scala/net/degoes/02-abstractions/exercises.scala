@@ -65,14 +65,18 @@ object algebra {
 }
 
 object functor {
+
   //
   // EXERCISE 1
   //
   // Define an instance of `Functor` for `BTree`.
   //
   sealed trait BTree[+A]
+
   case class Leaf[A](a: A) extends BTree[A]
+
   case class Fork[A](left: BTree[A], right: BTree[A]) extends BTree[A]
+
   implicit val BTreeFunctor: Functor[BTree] =
     new Functor[BTree] {
       def map[A, B](fa: BTree[A])(f: A => B): BTree[B] =
@@ -97,7 +101,7 @@ object functor {
 
   implicit def ParserFunctor[E]: Functor[Parser[E, ?]] =
     new Functor[Parser[E, ?]] {
-      def map[A, B](fa: Parser[E, A])(f:  A => B): Parser[E, B] = Parser[E, B](s => fa.run(s).map(e => (e._1, f(e._2))))
+      def map[A, B](fa: Parser[E, A])(f: A => B): Parser[E, B] = Parser[E, B](s => fa.run(s).map(e => (e._1, f(e._2))))
     }
 
   def zip[E, A, B](l: Parser[E, A], r: Parser[E, B]): Parser[E, (A, B)] = Parser[E, (A, B)] { s =>
@@ -115,6 +119,7 @@ object functor {
   // Try to define an instance of `Functor` for the following data type.
   //
   case class DataType[A](f: A => A)
+
   implicit val DataTypeFunctor: Functor[DataType] =
     new Functor[DataType] {
       def map[A, B](fa: DataType[A])(f: A => B): DataType[B] = DataType(b => f(fa.f))
@@ -126,18 +131,21 @@ object functor {
   // Define an instance of `Functor` for `FunctorProduct`.
   //
   case class FunctorProduct[F[_], G[_], A](l: F[A], r: G[A])
-  implicit def FunctorProductFunctor[F[_]: Functor, G[_]: Functor]:
+
+  implicit def FunctorProductFunctor[F[_] : Functor, G[_] : Functor]:
   Functor[FunctorProduct[F, G, ?]] = new Functor[FunctorProduct[F, G, ?]] {
     override def map[A, B](fa: FunctorProduct[F, G, A])(f: A => B): FunctorProduct[F, G, B] =
       FunctorProduct(fa.l.map(f), fa.r.map(f))
   }
+
   //
   // EXERCISE 6
   //
   // Define an instance of `Functor` for `FunctorSum`.
   //
   case class FunctorSum[F[_], G[_], A](run: Either[F[A], G[A]])
-  implicit def FunctorSumFunctor[F[_]: Functor, G[_]: Functor]:
+
+  implicit def FunctorSumFunctor[F[_] : Functor, G[_] : Functor]:
   Functor[FunctorSum[F, G, ?]] = new Functor[FunctorSum[F, G, ?]] {
     override def map[A, B](fa: FunctorSum[F, G, A])(f: A => B): FunctorSum[F, G, B] =
       FunctorSum(fa.run match {
@@ -153,7 +161,7 @@ object functor {
   //
   case class FunctorNest[F[_], G[_], A](run: F[G[A]])
 
-  implicit def FunctorNestFunctor[F[_]: Functor, G[_]: Functor]:
+  implicit def FunctorNestFunctor[F[_] : Functor, G[_] : Functor]:
   Functor[FunctorNest[F, G, ?]] = new Functor[FunctorNest[F, G, ?]] {
     override def map[A, B](fa: FunctorNest[F, G, A])(f: A => B): FunctorNest[F, G, B] = FunctorNest(fa.run.map(_.map(f)))
   }
@@ -168,6 +176,7 @@ object functor {
         zipList1(as, bs) ++ bs.map(b => (a, b))
       case (Nil, bs) => Nil
     }
+
   def zipList2[A, B](l: List[A], r: List[B]): List[(A, B)] =
     (l, r) match {
       case (a :: as, b :: bs) => ((a, b)) :: zipList2(as, bs)
@@ -180,11 +189,11 @@ object functor {
   // Define `Applicative` for `Option`.
   //
   implicit val OptionApplicative: Applicative[Option] =
-    new Applicative[Option] {
-      def point[A](a: => A): Option[A] = Some(a)
+  new Applicative[Option] {
+    def point[A](a: => A): Option[A] = Some(a)
 
-      def ap[A, B](fa: => Option[A])(f: => Option[A => B]): Option[B] = fa.flatMap(a => f.map(ff => ff(a)))
-    }
+    def ap[A, B](fa: => Option[A])(f: => Option[A => B]): Option[B] = fa.flatMap(a => f.map(ff => ff(a)))
+  }
 
   //
   // EXERCISE 9
@@ -193,11 +202,12 @@ object functor {
   //
   // Bonus: Implement `ap2` in terms of `zip`.
   //
-  val example1 = (Option(3) |@| Option(5))((_, _))
-  val example2 = zip(Option(3), Option("foo")) : Option[(Int, String)]
+  val example1 = (Option(3) |@| Option(5)) ((_, _))
+  val example2 = zip(Option(3), Option("foo")): Option[(Int, String)]
 
-  def zip[F[_]: Applicative, A, B](l: F[A], r: F[B]): F[(A, B)] = (l |@| r)((_, _))
-  def ap2[F[_]: Applicative, A, B](fa: F[A], fab: F[A => B]): F[B] = zip(fa, fab).map(s => s._2(s._1))
+  def zip[F[_] : Applicative, A, B](l: F[A], r: F[B]): F[(A, B)] = (l |@| r) ((_, _))
+
+  def ap2[F[_] : Applicative, A, B](fa: F[A], fab: F[A => B]): F[B] = zip(fa, fab).map(s => s._2(s._1))
 
   //
   // EXERCISE 10
@@ -206,9 +216,9 @@ object functor {
   //
   implicit def ApplicativeParser[E]: Applicative[Parser[E, ?]] =
     new Applicative[Parser[E, ?]] {
-      def point[A](a: => A): Parser[E,A] = Parser(s => Right((s, a)))
+      def point[A](a: => A): Parser[E, A] = Parser(s => Right((s, a)))
 
-      def ap[A, B](fa: => Parser[E,A])(f: => Parser[E, A => B]): Parser[E,B] = Parser { s =>
+      def ap[A, B](fa: => Parser[E, A])(f: => Parser[E, A => B]): Parser[E, B] = Parser { s =>
         (fa.run(s), f.run(s)) match {
           case (Right(faa), Right(ff)) => Right(ff._1, ff._2(faa._1))
           case (Left(e), _) => Left(e)
@@ -216,25 +226,59 @@ object functor {
         }
       }
     }
-  implicit def ApplicativeList: Applicative[List] =
+
+  implicit def ApplicativeList: Applicative[List] = new Applicative[List] {
+    def point[A](a: => A): List[A] = List(a)
+
+    def ap[A, B](fa: => List[A])(f: => List[A => B]): List[B] = fa match {
+      case h :: t => f.map(s => s(h)) ::: ap(t)(f)
+      case Nil => Nil
+    }
+  }
 
   //
   // EXERCISE 11
   //
   // Define an instance of `Monad` for `BTree`.
   //
-  implicit val MonadBTree: Monad[BTree] =
+  implicit val MonadBTree: Monad[BTree] = new Monad[BTree] {
+    def point[A](a: => A): BTree[A] = Leaf(a)
 
-  implicit val MonadList: Monad[List] =
+    def bind[A, B](fa: BTree[A])(f: A => BTree[B]): BTree[B] = fa match {
+      case Leaf(a) => f(a)
+      case Fork(l, r) => Fork(bind(l)(f), bind(r)(f))
+    }
+  }
 
-  implicit val MonadList: Monad[Option] =
+  implicit val MonadList: Monad[List] = new Monad[List] {
+    def point[A](a: => A): List[A] = List(a)
+
+    def bind[A, B](fa: List[A])(f: A => List[B]): List[B] = fa match {
+      case Nil => Nil
+      case h :: t => f(h) ::: bind(t)(f)
+    }
+  }
+
+  implicit val MonadOption: Monad[Option] = new Monad[Option] {
+    def point[A](a: => A): Option[A] = Some(a)
+
+    def bind[A, B](fa: Option[A])(f: A => Option[B]): Option[B] = fa match {
+      case Some(a) => f(a)
+      case None => None
+    }
+  }
 
   //
   // EXERCISE 12
   //
   // Define an instance of `Monad` for `Parser[E, ?]`.
   //
-  implicit def MonadParser[E]: Monad[Parser[E, ?]] =
+  implicit def MonadParser[E]: Monad[Parser[E, ?]] = new Monad[Parser[E, ?]] {
+    def point[A](a: => A): Parser[E, A] = Parser(s => Right((s, a)))
+
+    def bind[A, B](fa: Parser[E, A])(f: A => Parser[E, B]): Parser[E, B] =
+      Parser(s => fa.run(s).flatMap(a => f(a._2).run(s)))
+  }
 }
 
 object parser {
@@ -444,7 +488,7 @@ object optics {
   // Create a version of `org2` that uses lenses to update the salaries.
   //
   val org2_lens: Org =
-
+  (Org.site >>> Site.manager >>> Employee.salary).update(_ * 0.95)(org)
   //
   // EXERCISE 3
   //
@@ -453,7 +497,10 @@ object optics {
   final case class Prism[S, A](
     get: S => Option[A],
     set: A => S) { self =>
-    def >>> [B](that: Prism[A, B]): Prism[S, B] =
+    def >>> [B](that: Prism[A, B]): Prism[S, B] = Prism[S, B](
+      s => get(s).flatMap(that.get),
+      b => self.set(that.set(b))
+    )
 
     final def select(implicit ev: Unit =:= A): S =
       set(ev(()))
@@ -465,6 +512,7 @@ object optics {
   // Implement `_Left` and `_Right`.
   //
   def _Left[A, B]: Prism[Either[A, B], A] =
+    Prism(_.fold(Some(_), _ => None), Left(_))
   def _Right[A, B]: Prism[Either[A, B], B] =
-    ???
+    Prism(_.fold(_ => None, Some(_)), Right(_))
 }
